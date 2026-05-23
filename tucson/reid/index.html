@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Reid Park · Tucson Orienteering Club</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Georgia', serif;
+      background: #1a1a1a;
+      color: #f0ece4;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      background: #1a1a1a;
+      padding: 10px 16px 8px;
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+      z-index: 1000;
+    }
+
+    header h1 {
+      font-size: 1.05rem;
+      font-weight: normal;
+      letter-spacing: 0.04em;
+      color: #f0ece4;
+    }
+
+    header span {
+      font-size: 0.75rem;
+      color: #888;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    #map {
+      flex: 1;
+      width: 100%;
+      background: #2a2a2a;
+    }
+
+    /* Status bar */
+    #status {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(26, 26, 26, 0.88);
+      backdrop-filter: blur(8px);
+      color: #f0ece4;
+      font-size: 0.72rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid #444;
+      z-index: 1000;
+      white-space: nowrap;
+      transition: opacity 0.4s ease;
+      pointer-events: none;
+    }
+
+    #status.hidden { opacity: 0; }
+
+    /* Locate button */
+    #locate-btn {
+      position: absolute;
+      bottom: 64px;
+      right: 16px;
+      width: 44px;
+      height: 44px;
+      background: #1a1a1a;
+      border: 1px solid #444;
+      border-radius: 8px;
+      color: #f0ece4;
+      font-size: 1.2rem;
+      cursor: pointer;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #locate-btn:active { background: #333; }
+
+    /* GPS dot styling */
+    .gps-dot {
+      width: 16px;
+      height: 16px;
+      background: #4a9eff;
+      border: 2.5px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 0 4px rgba(74, 158, 255, 0.25);
+    }
+
+    /* Leaflet overrides */
+    .leaflet-control-zoom {
+      border: 1px solid #444 !important;
+      border-radius: 8px !important;
+      overflow: hidden;
+    }
+
+    .leaflet-control-zoom a {
+      background: #1a1a1a !important;
+      color: #f0ece4 !important;
+      border-bottom: 1px solid #444 !important;
+      width: 34px !important;
+      height: 34px !important;
+      line-height: 34px !important;
+      font-size: 1.1rem !important;
+    }
+
+    .leaflet-control-zoom a:hover { background: #333 !important; }
+    .leaflet-control-zoom-out { border-bottom: none !important; }
+    .leaflet-control-attribution { font-size: 0.65rem; background: rgba(26,26,26,0.75) !important; color: #aaa !important; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Reid Park</h1>
+  <span>Tucson Orienteering Club</span>
+</header>
+
+<div id="map"></div>
+<div id="status">Locating…</div>
+<button id="locate-btn" title="Center on my location">⊕</button>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // ── Bounding box (WGS84) ──────────────────────────────────────────
+  var north =  32.24124;
+  var south =  32.23245;
+  var east  = -110.91992;
+  var west  = -110.92921;
+  var bounds = [[south, west], [north, east]];
+
+  // ── Map init ──────────────────────────────────────────────────────
+  var map = L.map('map', {
+    zoomControl: true,
+    attributionControl: true,
+    maxBounds: L.latLngBounds(
+      [south - 0.002, west - 0.002],
+      [north + 0.002, east + 0.002]
+    ),
+    maxBoundsViscosity: 0.85
+  });
+
+  // OpenStreetMap basemap
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  // Orienteering map image overlay (replace 'map.png' with your filename)
+  L.imageOverlay('reid_park.png', bounds, { opacity: 0.9 }).addTo(map);
+  map.fitBounds(bounds);
+
+  // ── GPS tracking ──────────────────────────────────────────────────
+  var gpsMarker = null;
+  var accuracyCircle = null;
+  var tracking = false;
+  var statusEl = document.getElementById('status');
+  var statusTimer = null;
+
+  function showStatus(msg, autohide) {
+    statusEl.textContent = msg;
+    statusEl.classList.remove('hidden');
+    clearTimeout(statusTimer);
+    if (autohide) {
+      statusTimer = setTimeout(function() {
+        statusEl.classList.add('hidden');
+      }, 3000);
+    }
+  }
+
+  function onLocationFound(e) {
+    var latlng = e.latlng;
+    var accuracy = Math.round(e.accuracy);
+
+    // Update or create GPS dot
+    if (gpsMarker) {
+      gpsMarker.setLatLng(latlng);
+    } else {
+      gpsMarker = L.marker(latlng, {
+        icon: L.divIcon({
+          className: '',
+          html: '<div class="gps-dot"></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        }),
+        zIndexOffset: 1000
+      }).addTo(map);
+    }
+
+    // Accuracy circle
+    if (accuracyCircle) {
+      accuracyCircle.setLatLng(latlng).setRadius(e.accuracy);
+    } else {
+      accuracyCircle = L.circle(latlng, {
+        radius: e.accuracy,
+        color: '#4a9eff',
+        fillColor: '#4a9eff',
+        fillOpacity: 0.08,
+        weight: 1,
+        opacity: 0.4
+      }).addTo(map);
+    }
+
+    showStatus('±' + accuracy + ' m', true);
+  }
+
+  function onLocationError(e) {
+    showStatus('Location unavailable', false);
+  }
+
+  // Start watching location automatically
+  map.on('locationfound', onLocationFound);
+  map.on('locationerror', onLocationError);
+
+  showStatus('Locating…', false);
+  map.locate({ watch: true, enableHighAccuracy: true, maximumAge: 5000 });
+
+  // ── Locate button — re-center on current position ─────────────────
+  document.getElementById('locate-btn').addEventListener('click', function() {
+    if (gpsMarker) {
+      map.setView(gpsMarker.getLatLng(), map.getZoom());
+      showStatus('Centered', true);
+    } else {
+      showStatus('Still locating…', true);
+    }
+  });
+</script>
+
+</body>
+</html>
