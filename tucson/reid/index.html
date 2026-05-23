@@ -140,14 +140,14 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  // ── Bounding box (WGS84) ──────────────────────────────────────────
+  // lat/lon bounding box grabbed roughly from google maps
   var north =  32.2143117;
   var south =  32.207195;
   var east  = -110.917973;
   var west  = -110.926661;
   var bounds = [[south, west], [north, east]];
 
-  // ── Map init ──────────────────────────────────────────────────────
+  // init
   var map = L.map('map', {
     zoomControl: true,
     attributionControl: true,
@@ -164,11 +164,11 @@
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(map);
 
-  // Orienteering map image overlay (replace 'map.png' with your filename)
+  // O map
   L.imageOverlay('reid_park.png', bounds, { opacity: 0.9 }).addTo(map);
   map.fitBounds(bounds);
 
-  // ── GPS tracking ──────────────────────────────────────────────────
+  // GPS stuff
   var gpsMarker = null;
   var accuracyCircle = null;
   var tracking = false;
@@ -233,7 +233,7 @@
   showStatus('Locating…', false);
   map.locate({ watch: true, enableHighAccuracy: true, maximumAge: 5000 });
 
-  // ── Locate button — re-center on current position ─────────────────
+  // Locate button  
   document.getElementById('locate-btn').addEventListener('click', function() {
     if (gpsMarker) {
       map.setView(gpsMarker.getLatLng(), map.getZoom());
